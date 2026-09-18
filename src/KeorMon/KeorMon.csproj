@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>KeorMon</AssemblyName>
+    <RootNamespace>KeorMon</RootNamespace>
+    <Version>1.0.0</Version>
+    <Product>Legrand Keor SP UPS</Product>
+    <AssemblyTitle>Legrand Keor SP UPS</AssemblyTitle>
+    <ApplicationIcon></ApplicationIcon>
+    <!-- The tray app is the primary face of this program, but the same binary also
+         runs headless (worker / once modes), so console output must stay usable. -->
+    <DisableWinExeOutputInference>true</DisableWinExeOutputInference>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
+    <PackageReference Include="System.Management" Version="8.0.0" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
+  </ItemGroup>
+
+</Project>

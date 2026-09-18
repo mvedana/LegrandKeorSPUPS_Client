@@ -1,0 +1,26 @@
+# build output
+bin/
+obj/
+src/KeorMon/bin/
+src/KeorMon/obj/
+
+# runtime data
+*.db
+*.db-wal
+*.db-shm
+ups-monitor.log
+ups-history.csv
+ups-config.json
+
+# screenshots: blocked by default; only reviewed, app-window-only captures
+# (taken via PrintWindow, never full-screen) are whitelisted below.
+*.png
+*.jpg
+!docs/screenshot-dashboard.png
+!docs/screenshot-synoptic.png
+!docs/screenshot-on-battery.png
+
+# AI assistant files (never commit)
+.claude/
+CLAUDE.md
+CLAUDE.local.md

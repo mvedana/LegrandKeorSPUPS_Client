@@ -25,12 +25,25 @@ public sealed class SettingsPanel : Panel
     private readonly Button _testBtn = new() { Text = L10n.T("set_test") };
     private readonly Label _saveInfo = new() { AutoSize = true, ForeColor = Theme.Ok };
 
-    private readonly ComboBox _paramBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 240 };
+    private readonly ComboBox _paramBox = new()
+    {
+        DropDownStyle = ComboBoxStyle.DropDownList,
+        Width = 380,
+        DropDownWidth = 460,
+        Anchor = AnchorStyles.Left | AnchorStyles.Right,
+    };
     private readonly NumericUpDown _paramValue = new() { Minimum = -1, Maximum = 65535, Width = 100 };
     private readonly Label _paramInfo = new() { AutoSize = true, MaximumSize = new Size(420, 0), ForeColor = Theme.TextMuted };
     private readonly Button _paramRead = new() { Text = "Leggi" };
     private readonly Button _paramWrite = new() { Text = "Scrivi sul UPS" };
     private readonly Label _paramResult = new() { AutoSize = true, MaximumSize = new Size(420, 0) };
+    private readonly Label _paramDesc = new()
+    {
+        AutoSize = true,
+        MaximumSize = new Size(440, 0),
+        ForeColor = Theme.TextMuted,
+        Padding = new Padding(0, 2, 0, 6),
+    };
 
     public SettingsPanel(AppConfig cfg, MonitorEngine engine)
     {
@@ -67,12 +80,12 @@ public sealed class SettingsPanel : Panel
             grid.SetColumnSpan(note, 2);
         }
 
-        AddRow(grid, L10n.T("set_poll"), _poll, _cfg.PollSeconds);
-        AddRow(grid, L10n.T("set_warn_charge"), _warnCharge, _cfg.WarnChargePercent);
-        AddRow(grid, L10n.T("set_warn_rt"), _warnRuntime, _cfg.WarnRuntimeSeconds);
-        AddRow(grid, L10n.T("set_crit_charge"), _critCharge, _cfg.CriticalChargePercent);
-        AddRow(grid, L10n.T("set_crit_rt"), _critRuntime, _cfg.CriticalRuntimeSeconds);
-        AddRow(grid, L10n.T("set_grace"), _grace, _cfg.CriticalGraceSeconds);
+        AddRow(grid, L10n.T("set_poll"), _poll, _cfg.PollSeconds, "help_poll");
+        AddRow(grid, L10n.T("set_warn_charge"), _warnCharge, _cfg.WarnChargePercent, "help_warn_charge");
+        AddRow(grid, L10n.T("set_warn_rt"), _warnRuntime, _cfg.WarnRuntimeSeconds, "help_warn_rt");
+        AddRow(grid, L10n.T("set_crit_charge"), _critCharge, _cfg.CriticalChargePercent, "help_crit_charge");
+        AddRow(grid, L10n.T("set_crit_rt"), _critRuntime, _cfg.CriticalRuntimeSeconds, "help_crit_rt");
+        AddRow(grid, L10n.T("set_grace"), _grace, _cfg.CriticalGraceSeconds, "help_grace");
 
         // critical action: simulate / hibernate (default) / shutdown
         grid.Controls.Add(new Label { Text = L10n.T("set_action"), AutoSize = true, ForeColor = Theme.Warn, Padding = new Padding(0, 6, 8, 0) });
@@ -80,6 +93,7 @@ public sealed class SettingsPanel : Panel
         int actIdx = Array.IndexOf(ActionCodes, _cfg.CriticalAction);
         _actionBox.SelectedIndex = actIdx >= 0 ? actIdx : 1;
         grid.Controls.Add(_actionBox);
+        AddHelp(grid, "help_action");
 
         // language selector: Auto + the 20 supported languages by native name
         grid.Controls.Add(new Label { Text = L10n.T("lang_label"), AutoSize = true, ForeColor = Theme.TextMuted, Padding = new Padding(0, 6, 8, 0) });
@@ -88,6 +102,7 @@ public sealed class SettingsPanel : Panel
         int langIdx = Array.IndexOf(L10n.Codes, _cfg.Language);
         _langBox.SelectedIndex = langIdx >= 0 ? langIdx + 1 : 0;
         grid.Controls.Add(_langBox);
+        AddHelp(grid, "help_lang");
 
         _saveBtn.AutoSize = true;
         StyleButton(_saveBtn);
@@ -122,6 +137,9 @@ public sealed class SettingsPanel : Panel
 
         grid.Controls.Add(_paramInfo);
         grid.SetColumnSpan(_paramInfo, 2);
+
+        grid.Controls.Add(_paramDesc);
+        grid.SetColumnSpan(_paramDesc, 2);
 
         _paramRead.Text = L10n.T("set_read");
         _paramWrite.Text = L10n.T("set_write");
@@ -165,12 +183,29 @@ public sealed class SettingsPanel : Panel
         return grid;
     }
 
-    private static void AddRow(TableLayoutPanel grid, string label, NumericUpDown control, decimal value)
+    private static void AddRow(TableLayoutPanel grid, string label, NumericUpDown control, decimal value, string? helpKey = null)
     {
         grid.Controls.Add(new Label { Text = label, AutoSize = true, ForeColor = Theme.TextMuted, Padding = new Padding(0, 6, 8, 0) });
         control.Value = Math.Clamp(value, control.Minimum, control.Maximum);
         control.Width = 100;
         grid.Controls.Add(control);
+        if (helpKey != null) AddHelp(grid, helpKey);
+    }
+
+    /// <summary>Explanatory line under a settings field, spanning both grid columns.</summary>
+    private static void AddHelp(TableLayoutPanel grid, string key)
+    {
+        var help = new Label
+        {
+            Text = L10n.T(key),
+            AutoSize = true,
+            MaximumSize = new Size(440, 0),
+            ForeColor = Theme.TextMuted,
+            Font = new Font(Control.DefaultFont.FontFamily, Control.DefaultFont.Size - 0.5f),
+            Padding = new Padding(0, 0, 0, 8),
+        };
+        grid.Controls.Add(help);
+        grid.SetColumnSpan(help, 2);
     }
 
     private static void StyleButton(Button b)
@@ -240,6 +275,7 @@ public sealed class SettingsPanel : Panel
         _paramInfo.Text = L10n.F("set_param_info", def.Id, def.Min, def.Max, def.Unit) +
                           (def.Dangerous ? L10n.T("set_param_danger") : "");
         _paramInfo.ForeColor = def.Dangerous ? Theme.Crit : Theme.TextMuted;
+        _paramDesc.Text = L10n.T("desc_" + def.Name);
         _paramResult.Text = "";
         ReadParam(writable);
     }

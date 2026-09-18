@@ -30,6 +30,19 @@ public static class Theme
     public static Font SmallFont  { get; } = new("Segoe UI", 8.5f);
     public static Font LabelFont  { get; } = new("Segoe UI", 9.5f);
 
+    /// <summary>
+    /// The custom-painted controls draw in device pixels while their fonts are in
+    /// points, so on a scaled display the text grows but raw pixel constants do not:
+    /// glyphs, boxes and paddings must be multiplied by the control's own DPI ratio.
+    /// </summary>
+    public static float ScaleOf(this Control c) => c.DeviceDpi / 96f;
+
+    /// <summary>Scales a 96-DPI design constant to the control's current DPI.</summary>
+    public static int Sc(this Control c, int px) => (int)Math.Round(px * c.DeviceDpi / 96f);
+
+    /// <inheritdoc cref="Sc(Control,int)"/>
+    public static float Sc(this Control c, float px) => px * c.DeviceDpi / 96f;
+
     public static Color SeverityColor(Ups.Severity s) => s switch
     {
         Ups.Severity.Critical => Crit,

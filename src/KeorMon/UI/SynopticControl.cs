@@ -8,6 +8,13 @@ namespace KeorMon.UI;
 /// Energy flow is drawn as moving dots whose speed follows the measured load;
 /// paths, colors and the battery fill react to the live UPS state.
 /// </summary>
+/// <remarks>
+/// Everything here is painted by hand in device pixels, so every geometric constant
+/// is a 96-DPI design value pushed through <see cref="Theme.Sc(Control,int)"/>: the
+/// fonts are in points and grow on their own with the display scaling, and unscaled
+/// boxes would end up too small for their own text. Node widths are measured from
+/// the strings they must hold so a long "222,3 V · 50 Hz" can never spill out.
+/// </remarks>
 public sealed class SynopticControl : Control
 {
     private UpsStatus? _status;
@@ -37,6 +44,12 @@ public sealed class SynopticControl : Control
         _assessment = assessment;
     }
 
+    protected override void OnDpiChangedAfterParent(EventArgs e)
+    {
+        base.OnDpiChangedAfterParent(e);
+        Invalidate();
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing) _timer.Dispose();
@@ -47,6 +60,7 @@ public sealed class SynopticControl : Control
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
         g.Clear(Theme.Background);
 
         var s = _status;
@@ -57,14 +71,25 @@ public sealed class SynopticControl : Control
 
         // --- layout ---------------------------------------------------------
         int midY = Height / 2;
-        int nodeW = Math.Min(240, Width / 4);
+
+        // Width is driven by the widest label any node has to show, so the boxes stay
+        // readable at 125/150/200% where the point-sized fonts are much wider.
+        float textW = Math.Max(MeasureWidest(g, Theme.LabelFont, GridText(s, mainsOk), DevicesText(s, load)),
+                               MeasureWidest(g, Theme.SmallFont, UpsLine2(s, onBattery), UpsLine3(s)));
+        int nodeW = (int)Math.Ceiling(textW) + this.Sc(28);
+        nodeW = Math.Clamp(nodeW, this.Sc(200), Math.Max(this.Sc(120), (int)(Width / 3.4f)));
+
+        // Heights follow the window too: a short or narrow window shrinks the boxes
+        // instead of letting them run past the edges.
+        int upsH = Math.Clamp(this.Sc(264), this.Sc(150), Math.Max(this.Sc(120), Height - this.Sc(56)));
+        int nodeH = Math.Clamp(this.Sc(184), this.Sc(110), upsH - this.Sc(40));
         int gridX = Width / 6;
         int upsX = Width / 2;
         int devX = Width - Width / 6;
 
-        var gridRect = new Rectangle(gridX - nodeW / 2, midY - 90, nodeW, 180);
-        var upsRect = new Rectangle(upsX - nodeW / 2, midY - 120, nodeW, 240);
-        var devRect = new Rectangle(devX - nodeW / 2, midY - 90, nodeW, 180);
+        var gridRect = new Rectangle(gridX - nodeW / 2, midY - nodeH / 2, nodeW, nodeH);
+        var upsRect = new Rectangle(upsX - nodeW / 2, midY - upsH / 2, nodeW, upsH);
+        var devRect = new Rectangle(devX - nodeW / 2, midY - nodeH / 2, nodeW, nodeH);
 
         // --- flow lines (behind the nodes) -----------------------------------
         var lineGridUps = new PointF[] { new(gridRect.Right, midY), new(upsRect.Left, midY) };
@@ -87,13 +112,67 @@ public sealed class SynopticControl : Control
                 ? $"{s.PowerSourceLabel} — {string.Join("; ", a.Reasons)}"
                 : $"{s.PowerSourceLabel} — {L10n.T("status_normal")}";
         using var headBrush = new SolidBrush(Theme.SeverityColor(_assessment?.Level ?? Severity.Normal));
-        g.DrawString(headline, Theme.TitleFont, headBrush, 14, 10);
+        using var headFont = Fit(g, headline, Theme.TitleFont, Width - this.Sc(28));
+        g.DrawString(headline, headFont, headBrush, this.Sc(14), this.Sc(10));
     }
 
-    // ------------------------------------------------------------------ flows
-    private void DrawFlow(Graphics g, PointF[] line, Color color, bool active, int dotSpacing = 34)
+    /// <summary>
+    /// Returns <paramref name="font"/> shrunk just enough for <paramref name="text"/> to
+    /// fit <paramref name="maxWidth"/>. The caller always disposes the result, so a font
+    /// that already fits is handed back as a clone.
+    /// </summary>
+    private static Font Fit(Graphics g, string text, Font font, float maxWidth)
     {
-        using var track = new Pen(Color.FromArgb(70, color), 4f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        if (string.IsNullOrEmpty(text) || maxWidth <= 0) return (Font)font.Clone();
+        float w = g.MeasureString(text, font).Width;
+        if (w <= maxWidth) return (Font)font.Clone();
+        return new Font(font.FontFamily, Math.Max(5.5f, font.Size * maxWidth / w), font.Style);
+    }
+
+    /// <summary>Draws one centred line inside <paramref name="r"/>, shrinking it to fit; returns its height.</summary>
+    private float DrawCentered(Graphics g, string text, Font font, Brush brush, Rectangle r, float y)
+    {
+        if (string.IsNullOrEmpty(text)) return 0;
+        using var f = Fit(g, text, font, r.Width - this.Sc(16f));
+        var sz = g.MeasureString(text, f);
+        g.DrawString(text, f, brush, r.X + (r.Width - sz.Width) / 2, y);
+        return sz.Height;
+    }
+
+    private static float MeasureWidest(Graphics g, Font font, params string[] texts)
+    {
+        float w = 0;
+        foreach (var t in texts)
+            if (!string.IsNullOrEmpty(t)) w = Math.Max(w, g.MeasureString(t, font).Width);
+        return w;
+    }
+
+    // The label strings live in one place so the layout pass can measure exactly what
+    // the draw pass will later write.
+    private static string GridText(UpsStatus? s, bool mainsOk) =>
+        s?.InputVoltage is { } v && mainsOk
+            ? $"{v:0.#} V  ·  {s.InputFrequency:0.#} Hz"
+            : L10n.T("syn_absent");
+
+    private static string DevicesText(UpsStatus? s, double load) =>
+        s is null ? "—"
+            : $"{s.OutputActivePowerW:0} W  ·  {L10n.T("syn_load")} {load:0}%  ·  {s.OutputVoltage:0.#} V";
+
+    private static string UpsLine2(UpsStatus? s, bool onBattery) =>
+        onBattery
+            ? L10n.F("syn_runtime_big", s?.RuntimeMinutes is { } rtMin ? $"{rtMin:0.#}" : "—")
+            : s?.RechargeEtaMinutes is { } eta ? L10n.F("recharge_eta", eta)
+            : s?.RuntimeMinutes is { } rt ? L10n.F("syn_runtime", $"{rt:0.#}") : "";
+
+    private static string UpsLine3(UpsStatus? s) =>
+        s?.BatteryVoltage is { } bv ? L10n.F("syn_battv", $"{bv:0.#}") : "";
+
+    // ------------------------------------------------------------------ flows
+    private void DrawFlow(Graphics g, PointF[] line, Color color, bool active)
+    {
+        float dotSpacing = this.Sc(34f);
+        float dotR = this.Sc(3.2f);
+        using var track = new Pen(Color.FromArgb(70, color), this.Sc(4f)) { StartCap = LineCap.Round, EndCap = LineCap.Round };
         if (!active) track.DashStyle = DashStyle.Dash;
         g.DrawLines(track, line);
         if (!active) return;
@@ -106,7 +185,7 @@ public sealed class SynopticControl : Control
         for (float d = _phase * dotSpacing; d < totalLen; d += dotSpacing)
         {
             var p = PointAt(line, d);
-            g.FillEllipse(dot, p.X - 3.2f, p.Y - 3.2f, 6.4f, 6.4f);
+            g.FillEllipse(dot, p.X - dotR, p.Y - dotR, dotR * 2, dotR * 2);
         }
     }
 
@@ -130,15 +209,15 @@ public sealed class SynopticControl : Control
     }
 
     // ------------------------------------------------------------------ nodes
-    private static void DrawPanel(Graphics g, Rectangle r, string title, Color accent)
+    private void DrawPanel(Graphics g, Rectangle r, string title, Color accent)
     {
         using var body = new SolidBrush(Theme.Panel);
-        using var border = new Pen(accent, 1.6f);
-        using var path = Rounded(r, 10);
+        using var border = new Pen(accent, this.Sc(1.6f));
+        using var path = Rounded(r, this.Sc(10));
         g.FillPath(body, path);
         g.DrawPath(border, path);
         using var tb = new SolidBrush(Theme.TextMuted);
-        g.DrawString(title.ToUpperInvariant(), Theme.SmallFont, tb, r.X + 10, r.Y + 8);
+        g.DrawString(title.ToUpperInvariant(), Theme.SmallFont, tb, r.X + this.Sc(10), r.Y + this.Sc(8));
     }
 
     private static GraphicsPath Rounded(Rectangle r, int radius)
@@ -159,27 +238,26 @@ public sealed class SynopticControl : Control
         DrawPanel(g, r, L10n.T("syn_grid"), accent);
 
         // pylon glyph
-        int cx = r.X + r.Width / 2, top = r.Y + 34, bottom = r.Bottom - 58;
-        using var pen = new Pen(mainsOk ? accent : Theme.TextMuted, 2.2f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
-        g.DrawLine(pen, cx - 16, bottom, cx, top);
-        g.DrawLine(pen, cx + 16, bottom, cx, top);
-        g.DrawLine(pen, cx - 22, top + 16, cx + 22, top + 16);
-        g.DrawLine(pen, cx - 14, top + 34, cx + 14, top + 34);
-        g.DrawLine(pen, cx - 20, bottom, cx + 20, bottom);
+        int cx = r.X + r.Width / 2, top = r.Y + this.Sc(36);
+        int bottom = Math.Max(top + this.Sc(30), r.Bottom - this.Sc(60));
+        using var pen = new Pen(mainsOk ? accent : Theme.TextMuted, this.Sc(2.2f)) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        g.DrawLine(pen, cx - this.Sc(16), bottom, cx, top);
+        g.DrawLine(pen, cx + this.Sc(16), bottom, cx, top);
+        g.DrawLine(pen, cx - this.Sc(22), top + this.Sc(16), cx + this.Sc(22), top + this.Sc(16));
+        g.DrawLine(pen, cx - this.Sc(14), top + this.Sc(34), cx + this.Sc(14), top + this.Sc(34));
+        g.DrawLine(pen, cx - this.Sc(20), bottom, cx + this.Sc(20), bottom);
 
         if (!mainsOk)
         {
-            using var xPen = new Pen(Theme.Crit, 3f);
-            g.DrawLine(xPen, cx - 22, top + 2, cx + 22, bottom - 2);
-            g.DrawLine(xPen, cx + 22, top + 2, cx - 22, bottom - 2);
+            using var xPen = new Pen(Theme.Crit, this.Sc(3f));
+            g.DrawLine(xPen, cx - this.Sc(22), top + this.Sc(2), cx + this.Sc(22), bottom - this.Sc(2));
+            g.DrawLine(xPen, cx + this.Sc(22), top + this.Sc(2), cx - this.Sc(22), bottom - this.Sc(2));
         }
 
         using var val = new SolidBrush(mainsOk ? Theme.TextPrimary : Theme.Crit);
-        string text = s?.InputVoltage is { } v && mainsOk
-            ? $"{v:0.#} V  ·  {s.InputFrequency:0.#} Hz"
-            : L10n.T("syn_absent");
-        var sz = g.MeasureString(text, Theme.LabelFont);
-        g.DrawString(text, Theme.LabelFont, val, r.X + (r.Width - sz.Width) / 2, r.Bottom - 42);
+        string text = GridText(s, mainsOk);
+        using var valFont = Fit(g, text, Theme.LabelFont, r.Width - this.Sc(16f));
+        DrawCentered(g, text, valFont, val, r, r.Bottom - this.Sc(12) - g.MeasureString(text, valFont).Height);
     }
 
     private void DrawUpsNode(Graphics g, Rectangle r, UpsStatus? s, bool onBattery, double charge)
@@ -189,17 +267,24 @@ public sealed class SynopticControl : Control
                    : Theme.Ok;
         DrawPanel(g, r, s?.Model ?? "UPS", accent);
 
-        // battery glyph, vertical, filled by charge
-        var batt = new Rectangle(r.X + r.Width / 2 - 34, r.Y + 46, 68, 108);
-        using var bPen = new Pen(accent, 2.2f);
+        // Battery glyph: the three text rows underneath get their measured height
+        // first, and whatever vertical space is left becomes the glyph.
+        float textBlock = g.MeasureString("0", Theme.ValueFont).Height
+                        + g.MeasureString("0", onBattery ? Theme.MediumFont : Theme.SmallFont).Height
+                        + g.MeasureString("0", Theme.SmallFont).Height + this.Sc(14);
+        int battH = Math.Clamp((int)(r.Height - this.Sc(58) - textBlock), this.Sc(40), this.Sc(108));
+        int battW = Math.Min(this.Sc(68), Math.Max(this.Sc(28), r.Width / 3));
+        var batt = new Rectangle(r.X + r.Width / 2 - battW / 2, r.Y + this.Sc(46), battW, battH);
+        using var bPen = new Pen(accent, this.Sc(2.2f));
         g.DrawRectangle(bPen, batt);
         using (var capBrush = new SolidBrush(accent))
-            g.FillRectangle(capBrush, batt.X + batt.Width / 2 - 12, batt.Y - 8, 24, 6);
+            g.FillRectangle(capBrush, batt.X + batt.Width / 2 - this.Sc(12), batt.Y - this.Sc(8), this.Sc(24), this.Sc(6));
 
         var fillColor = charge <= 20 ? Theme.Crit : charge <= 50 ? Theme.Warn : Theme.Ok;
-        int fillH = (int)((batt.Height - 8) * Math.Clamp(charge / 100.0, 0, 1));
-        int innerX = batt.X + 4, innerW = batt.Width - 8;
-        int fillTop = batt.Bottom - 4 - fillH;
+        int inset = this.Sc(4);
+        int fillH = (int)((batt.Height - inset * 2) * Math.Clamp(charge / 100.0, 0, 1));
+        int innerX = batt.X + inset, innerW = batt.Width - inset * 2;
+        int fillTop = batt.Bottom - inset - fillH;
         if (fillH > 0)
         {
             using var fill = new SolidBrush(Color.FromArgb(200, fillColor));
@@ -213,8 +298,8 @@ public sealed class SynopticControl : Control
         bool charging = !onBattery && s != null && charge < 100;
         if (charging)
         {
-            int headroom = fillTop - (batt.Y + 4);
-            if (headroom > 4)
+            int headroom = fillTop - (batt.Y + inset);
+            if (headroom > inset)
             {
                 int waveH = (int)(headroom * _phase);
                 if (waveH > 0)
@@ -227,34 +312,39 @@ public sealed class SynopticControl : Control
             }
             // lightning bolt: universally "charging"
             var bcx = batt.X + batt.Width / 2f; var bcy = batt.Y + batt.Height / 2f;
+            float u = this.Sc(1f);
             var bolt = new[] {
-                new PointF(bcx + 7, bcy - 26), new PointF(bcx - 11, bcy + 5), new PointF(bcx - 1, bcy + 5),
-                new PointF(bcx - 7, bcy + 26), new PointF(bcx + 11, bcy - 5), new PointF(bcx + 1, bcy - 5) };
+                new PointF(bcx + 7 * u, bcy - 26 * u), new PointF(bcx - 11 * u, bcy + 5 * u), new PointF(bcx - 1 * u, bcy + 5 * u),
+                new PointF(bcx - 7 * u, bcy + 26 * u), new PointF(bcx + 11 * u, bcy - 5 * u), new PointF(bcx + 1 * u, bcy - 5 * u) };
             using var boltFill = new SolidBrush(Color.FromArgb(235, 255, 255, 255));
-            using var boltOutline = new Pen(Color.FromArgb(160, 20, 22, 28), 2f) { LineJoin = LineJoin.Round };
+            using var boltOutline = new Pen(Color.FromArgb(160, 20, 22, 28), this.Sc(2f)) { LineJoin = LineJoin.Round };
             g.FillPolygon(boltFill, bolt);
             g.DrawPolygon(boltOutline, bolt);
         }
-        else if (onBattery && fillH > 8)
+        else if (onBattery && fillH > this.Sc(8))
         {
             // draining band moving downward inside the fill
-            int bandH = Math.Min(14, fillH / 3);
+            int bandH = Math.Min(this.Sc(14), fillH / 3);
             int y = fillTop + (int)((fillH - bandH) * _phase);
             using var band = new SolidBrush(Color.FromArgb(90, 12, 13, 16));
             g.FillRectangle(band, innerX, y, innerW, bandH);
             // pulse the outline while discharging
             int alpha = (int)(90 + 80 * Math.Sin(_phase * Math.PI * 2));
-            using var pulse = new Pen(Color.FromArgb(alpha, Theme.Warn), 4f);
-            g.DrawRectangle(pulse, batt.X - 4, batt.Y - 12, batt.Width + 8, batt.Height + 16);
+            using var pulse = new Pen(Color.FromArgb(alpha, Theme.Warn), this.Sc(4f));
+            g.DrawRectangle(pulse, batt.X - this.Sc(4), batt.Y - this.Sc(12), batt.Width + this.Sc(8), batt.Height + this.Sc(16));
         }
 
         using var big = new SolidBrush(Theme.TextPrimary);
         using var muted = new SolidBrush(Theme.TextMuted);
 
-        // Charge % stays the big value in every state.
+        // The three text rows are stacked from the measured height of the row above,
+        // so they keep their spacing whatever the DPI does to the fonts.
         string pct = s?.ChargePercent is { } c ? $"{c:0.0}%" : "—";
-        var pctSize = g.MeasureString(pct, Theme.ValueFont);
-        g.DrawString(pct, Theme.ValueFont, big, r.X + (r.Width - pctSize.Width) / 2, batt.Bottom + 6);
+        float y2 = batt.Bottom + this.Sc(6);
+        y2 += DrawCentered(g, pct, Theme.ValueFont, big, r, y2) + this.Sc(2);
+
+        string line2 = UpsLine2(s, onBattery);
+        string line3 = UpsLine3(s);
 
         if (onBattery)
         {
@@ -263,25 +353,14 @@ public sealed class SynopticControl : Control
             var rtColor = _assessment?.Level == Severity.Critical ? Theme.Crit : Theme.Warn;
             int alpha = (int)(165 + 90 * Math.Sin(_phase * Math.PI * 2));
             using var rtBrush = new SolidBrush(Color.FromArgb(alpha, rtColor));
-            string rtText = L10n.F("syn_runtime_big", s?.RuntimeMinutes is { } rtMin ? $"{rtMin:0.#}" : "—");
-            var rtSize = g.MeasureString(rtText, Theme.MediumFont);
-            g.DrawString(rtText, Theme.MediumFont, rtBrush, r.X + (r.Width - rtSize.Width) / 2, batt.Bottom + 42);
-
-            string line3 = s?.BatteryVoltage is { } bv ? L10n.F("syn_battv", $"{bv:0.#}") : "";
-            var l3 = g.MeasureString(line3, Theme.SmallFont);
-            g.DrawString(line3, Theme.SmallFont, muted, r.X + (r.Width - l3.Width) / 2, batt.Bottom + 68);
+            y2 += DrawCentered(g, line2, Theme.MediumFont, rtBrush, r, y2) + this.Sc(2);
+            DrawCentered(g, line3, Theme.SmallFont, muted, r, y2);
         }
         else
         {
             // charging: show the estimated time to full instead of the static runtime
-            string line2 = s?.RechargeEtaMinutes is { } eta
-                ? L10n.F("recharge_eta", eta)
-                : s?.RuntimeMinutes is { } rt ? L10n.F("syn_runtime", $"{rt:0.#}") : "";
-            string line3 = s?.BatteryVoltage is { } bv ? L10n.F("syn_battv", $"{bv:0.#}") : "";
-            var l2 = g.MeasureString(line2, Theme.SmallFont);
-            g.DrawString(line2, Theme.SmallFont, muted, r.X + (r.Width - l2.Width) / 2, batt.Bottom + 44);
-            var l3 = g.MeasureString(line3, Theme.SmallFont);
-            g.DrawString(line3, Theme.SmallFont, muted, r.X + (r.Width - l3.Width) / 2, batt.Bottom + 60);
+            y2 += DrawCentered(g, line2, Theme.SmallFont, muted, r, y2);
+            DrawCentered(g, line3, Theme.SmallFont, muted, r, y2);
         }
     }
 
@@ -291,16 +370,24 @@ public sealed class SynopticControl : Control
         DrawPanel(g, r, L10n.T("syn_devices"), accent);
 
         // monitor + tower glyphs
-        int cx = r.X + r.Width / 2, gy = r.Y + 42;
-        using var pen = new Pen(Theme.TextPrimary, 2f);
-        g.DrawRectangle(pen, cx - 44, gy, 52, 36);                       // screen
-        g.DrawLine(pen, cx - 24, gy + 36, cx - 24, gy + 44);             // stand
-        g.DrawLine(pen, cx - 34, gy + 44, cx - 6, gy + 44);
-        g.DrawRectangle(pen, cx + 18, gy - 2, 22, 48);                   // tower
-        g.DrawLine(pen, cx + 23, gy + 6, cx + 35, gy + 6);
+        int cx = r.X + r.Width / 2, gy = r.Y + this.Sc(42);
+        using var pen = new Pen(Theme.TextPrimary, this.Sc(2f));
+        g.DrawRectangle(pen, cx - this.Sc(44), gy, this.Sc(52), this.Sc(36));                       // screen
+        g.DrawLine(pen, cx - this.Sc(24), gy + this.Sc(36), cx - this.Sc(24), gy + this.Sc(44));    // stand
+        g.DrawLine(pen, cx - this.Sc(34), gy + this.Sc(44), cx - this.Sc(6), gy + this.Sc(44));
+        g.DrawRectangle(pen, cx + this.Sc(18), gy - this.Sc(2), this.Sc(22), this.Sc(48));          // tower
+        g.DrawLine(pen, cx + this.Sc(23), gy + this.Sc(6), cx + this.Sc(35), gy + this.Sc(6));
 
-        // load bar
-        var bar = new Rectangle(r.X + 20, r.Bottom - 66, r.Width - 40, 10);
+        using var val = new SolidBrush(Theme.TextPrimary);
+        string text = DevicesText(s, load);
+        using var valFont = Fit(g, text, Theme.LabelFont, r.Width - this.Sc(16f));
+        float textY = r.Bottom - this.Sc(12) - g.MeasureString(text, valFont).Height;
+        DrawCentered(g, text, valFont, val, r, textY);
+
+        // load bar, sitting just above the value line
+        int barH = this.Sc(10);
+        int barY = Math.Max(r.Y + this.Sc(30), (int)(textY - this.Sc(10)) - barH);
+        var bar = new Rectangle(r.X + this.Sc(20), barY, Math.Max(this.Sc(20), r.Width - this.Sc(40)), barH);
         using var track = new SolidBrush(Theme.GridLine);
         g.FillRectangle(track, bar);
         int w = (int)(bar.Width * Math.Clamp(load / 100.0, 0, 1));
@@ -309,11 +396,5 @@ public sealed class SynopticControl : Control
             using var fill = new SolidBrush(accent);
             g.FillRectangle(fill, bar.X, bar.Y, w, bar.Height);
         }
-
-        using var val = new SolidBrush(Theme.TextPrimary);
-        string text = s is null ? "—"
-            : $"{s.OutputActivePowerW:0} W  ·  {L10n.T("syn_load")} {load:0}%  ·  {s.OutputVoltage:0.#} V";
-        var sz = g.MeasureString(text, Theme.LabelFont);
-        g.DrawString(text, Theme.LabelFont, val, r.X + (r.Width - sz.Width) / 2, r.Bottom - 46);
     }
 }

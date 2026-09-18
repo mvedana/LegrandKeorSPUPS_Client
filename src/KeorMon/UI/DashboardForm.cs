@@ -53,8 +53,11 @@ public sealed class DashboardForm : Form
         Text = $"Legrand Keor SP UPS — v{AppVersion.Short}";
         BackColor = Theme.Background;
         ForeColor = Theme.TextPrimary;
-        ClientSize = new Size(1180, 780);
-        MinimumSize = new Size(900, 640);
+        // The window is built in code, so nothing scales the design sizes for us:
+        // every absolute dimension below is a 96-DPI value run through Theme.Sc.
+        AutoScaleMode = AutoScaleMode.Dpi;
+        ClientSize = new Size(this.Sc(1180), this.Sc(780));
+        MinimumSize = new Size(this.Sc(900), this.Sc(640));
         StartPosition = FormStartPosition.CenterScreen;
         Font = Theme.LabelFont;
 
@@ -92,24 +95,24 @@ public sealed class DashboardForm : Form
         pageSynoptic.Controls.Add(_synoptic);
 
         // ---- dashboard page ----
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1, BackColor = Theme.Background, Padding = new Padding(8) };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));   // toolbar
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));  // cards
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, ColumnCount = 1, BackColor = Theme.Background, Padding = new Padding(this.Sc(8)) };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, this.Sc(40f)));   // toolbar
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, this.Sc(112f)));  // cards
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // charts
         pageDash.Controls.Add(root);
 
         var toolbar = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, WrapContents = false };
         _statusLabel.AutoSize = true;
-        _statusLabel.Padding = new Padding(4, 8, 20, 0);
+        _statusLabel.Padding = new Padding(this.Sc(4), this.Sc(8), this.Sc(20), 0);
         _statusLabel.Font = Theme.TitleFont;
         toolbar.Controls.Add(_statusLabel);
 
-        var rangeLabel = new Label { Text = L10n.T("period"), AutoSize = true, Padding = new Padding(0, 10, 4, 0), ForeColor = Theme.TextMuted };
+        var rangeLabel = new Label { Text = L10n.T("period"), AutoSize = true, Padding = new Padding(0, this.Sc(10), this.Sc(4), 0), ForeColor = Theme.TextMuted };
         _rangeBox.DropDownStyle = ComboBoxStyle.DropDownList;
         _rangeBox.Items.AddRange(Ranges.Select(r => (object)r.Label).ToArray());
         _rangeBox.SelectedIndex = 3; // 24h
         _rangeBox.SelectedIndexChanged += (_, _) => RefreshCharts();
-        _rangeBox.Width = 140;
+        _rangeBox.Width = this.Sc(140);
         toolbar.Controls.Add(rangeLabel);
         toolbar.Controls.Add(_rangeBox);
         root.Controls.Add(toolbar, 0, 0);
@@ -119,7 +122,7 @@ public sealed class DashboardForm : Form
         {
             cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 12.5f));
             c.Dock = DockStyle.Fill;
-            c.Margin = new Padding(4);
+            c.Margin = new Padding(this.Sc(4));
             cards.Controls.Add(c);
         }
         root.Controls.Add(cards, 0, 1);
@@ -132,7 +135,7 @@ public sealed class DashboardForm : Form
         foreach (var ch in new[] { _chartVoltage, _chartLoad, _chartBattery, _chartRuntime })
         {
             ch.Dock = DockStyle.Fill;
-            ch.Margin = new Padding(4);
+            ch.Margin = new Padding(this.Sc(4));
         }
         charts.Controls.Add(_chartVoltage, 0, 0);
         charts.Controls.Add(_chartLoad, 1, 0);
@@ -147,9 +150,9 @@ public sealed class DashboardForm : Form
         _eventsList.BackColor = Theme.Panel;
         _eventsList.ForeColor = Theme.TextPrimary;
         _eventsList.BorderStyle = BorderStyle.None;
-        _eventsList.Columns.Add(L10n.T("ev_when"), 150);
-        _eventsList.Columns.Add(L10n.T("ev_kind"), 160);
-        _eventsList.Columns.Add(L10n.T("ev_message"), 760);
+        _eventsList.Columns.Add(L10n.T("ev_when"), this.Sc(150));
+        _eventsList.Columns.Add(L10n.T("ev_kind"), this.Sc(160));
+        _eventsList.Columns.Add(L10n.T("ev_message"), this.Sc(760));
         pageEvents.Controls.Add(_eventsList);
         pageEvents.Enter += (_, _) => RefreshEvents();
 

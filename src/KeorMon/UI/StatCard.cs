@@ -14,7 +14,7 @@ public sealed class StatCard : Control
         DoubleBuffered = true;
         SetStyle(ControlStyles.ResizeRedraw | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint, true);
         BackColor = Theme.Panel;
-        MinimumSize = new Size(150, 92);
+        MinimumSize = new Size(this.Sc(150), this.Sc(92));
     }
 
     public string Label { get; }
@@ -28,10 +28,20 @@ public sealed class StatCard : Control
         Invalidate();
     }
 
+    protected override void OnDpiChangedAfterParent(EventArgs e)
+    {
+        base.OnDpiChangedAfterParent(e);
+        MinimumSize = new Size(this.Sc(150), this.Sc(92));
+        Invalidate();
+    }
+
+    // Painted by hand in device pixels, so every 96-DPI constant below goes through
+    // Theme.Sc to keep its proportions next to the point-sized fonts.
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
         g.Clear(Theme.Panel);
         using (var border = new Pen(Theme.PanelBorder)) g.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
 
@@ -39,14 +49,15 @@ public sealed class StatCard : Control
         using var strong = new SolidBrush(Theme.TextPrimary);
         using var accentBrush = new SolidBrush(_accent);
 
-        g.DrawString(Label.ToUpperInvariant(), Theme.SmallFont, muted, 12, 10);
-        g.DrawString(_value, Theme.ValueFont, accentBrush, 8, 26);
+        g.DrawString(Label.ToUpperInvariant(), Theme.SmallFont, muted, this.Sc(12), this.Sc(10));
+        g.DrawString(_value, Theme.ValueFont, accentBrush, this.Sc(8), this.Sc(26));
         if (!string.IsNullOrEmpty(_sub))
-            g.DrawString(_sub, Theme.SmallFont, muted, 12, Height - (( _fraction.HasValue) ? 34 : 22));
+            g.DrawString(_sub, Theme.SmallFont, muted, this.Sc(12),
+                Height - g.MeasureString(_sub, Theme.SmallFont).Height - (_fraction.HasValue ? this.Sc(20) : this.Sc(6)));
 
         if (_fraction is { } f)
         {
-            var barRect = new Rectangle(12, Height - 16, Width - 24, 6);
+            var barRect = new Rectangle(this.Sc(12), Height - this.Sc(16), Width - this.Sc(24), this.Sc(6));
             using var track = new SolidBrush(Theme.GridLine);
             g.FillRectangle(track, barRect);
             var w = (int)(barRect.Width * Math.Clamp(f, 0, 1));

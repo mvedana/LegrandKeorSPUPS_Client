@@ -9,7 +9,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>KeorMon</AssemblyName>
     <RootNamespace>KeorMon</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.1.2</Version>
     <Product>Legrand Keor SP UPS</Product>
     <AssemblyTitle>Legrand Keor SP UPS</AssemblyTitle>
     <ApplicationIcon></ApplicationIcon>
@@ -17,6 +17,10 @@
          runs headless (worker / once modes), so console output must stay usable. -->
     <DisableWinExeOutputInference>true</DisableWinExeOutputInference>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Every window is custom-painted; per-monitor v2 keeps it crisp (no bitmap
+         stretching) when the user drags it to a display with a different scaling. -->
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationUseCompatibleTextRendering>false</ApplicationUseCompatibleTextRendering>
     <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
 
